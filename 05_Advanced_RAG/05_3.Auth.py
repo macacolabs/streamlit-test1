@@ -9,6 +9,7 @@ ENV_PATH        = os.path.join(BASE_DIR, ".env")
 DATA_DIR        = os.path.join(BASE_DIR, "Data")
 PDF_PATH        = os.path.join(DATA_DIR, "AXCompass.pdf")
 VECTOR_DB_PATH  = os.path.join(BASE_DIR, "vectorDB")
+BM25_INDEX_PATH = os.path.join(VECTOR_DB_PATH, "bm25_index.pkl")
 COLLECTION_NAME = "ax_compass_v2"
 
 

@@ -38,7 +38,9 @@ _schemas   = _load_sibling("05_2.Schemas.py")
 
 load_env_file      = _auth.load_env_file
 require_api_key    = _auth.require_api_key
+BM25_INDEX_PATH    = _auth.BM25_INDEX_PATH
 setup_vector_store = _indexing.setup_vector_store
+load_bm25          = _indexing.load_bm25
 build_chain        = _retrieval.build_chain
 CollectedInfo      = _schemas.CollectedInfo
 
@@ -80,8 +82,11 @@ async def lifespan(app: FastAPI):
     _state["api_key"]    = api_key
     _state["llm"]        = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=api_key)
 
-    print("[Startup] 벡터 DB 초기화 중...")
-    _state["vectorstore"] = setup_vector_store(api_key)
+    print("[Startup] 벡터 DB 초기화 중 (Contextual Embedding 포함)...")
+    _state["vectorstore"] = setup_vector_store(api_key, enable_contextual=True)
+
+    print("[Startup] BM25 인덱스 로드 중...")
+    _state["bm25"] = load_bm25(BM25_INDEX_PATH)
 
     print("[Startup] 완료 — 서버 준비됨")
     yield
@@ -177,8 +182,15 @@ async def reindex(force: bool = False):
     if "api_key" not in _state:
         raise HTTPException(status_code=503, detail="서버가 아직 초기화되지 않았습니다.")
     try:
-        _state["vectorstore"] = setup_vector_store(_state["api_key"], force_reindex=force)
-        return {"status": "ok", "chunk_count": _state["vectorstore"]._collection.count()}
+        _state["vectorstore"] = setup_vector_store(
+            _state["api_key"], force_reindex=force, enable_contextual=True
+        )
+        _state["bm25"] = load_bm25(BM25_INDEX_PATH)
+        return {
+            "status":      "ok",
+            "chunk_count": _state["vectorstore"]._collection.count(),
+            "bm25_ready":  _state["bm25"] is not None,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -219,7 +231,7 @@ async def generate(req: GenerateRequest):
         groups      = _calculate_groups(info)
         total_hours = info.days * info.hours_per_day
 
-        chain  = build_chain(vectorstore, api_key)
+        chain  = build_chain(vectorstore, api_key, _state.get("bm25"))
         result = chain.invoke({
             "conversation": lc_msgs,
             "groups":       groups,
