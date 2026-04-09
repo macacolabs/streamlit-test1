@@ -3,7 +3,7 @@ import os
 from textwrap import dedent
 
 import streamlit as st
-from openai import OpenAI
+import requests
 
 # ──────────────────────────────────────────────
 # 환경 설정
@@ -216,109 +216,35 @@ if "greeted" not in st.session_state:
     _reset_state()
 
 # ──────────────────────────────────────────────
-# OpenAI 헬퍼
+# 백엔드 API 통신 헬퍼
 # ──────────────────────────────────────────────
 
-def build_system_prompt():
-    return dedent(
-        """
-        당신은 기업 교육용 AI 커리큘럼 설계 전문가다.
-        사용자가 입력한 요구사항을 바탕으로 실무형 교육 커리큘럼을 설계하라.
-
-        반드시 아래 규칙을 지켜라.
-        1. 출력은 반드시 JSON 하나만 반환한다.
-        2. 설명 문장, 코드블록 마크다운, 인사말을 추가하지 않는다.
-        3. 회차는 4개 이상 6개 이하로 구성한다.
-        4. 각 회차는 title, goals, activities를 포함한다.
-        5. 마지막에는 expected_outcomes와 notes를 포함한다.
-        6. notes에는 기업의 제한사항과 주의사항을 반영한다.
-        """
-    ).strip()
-
-
-def build_curriculum_schema():
-    return {
-        "type": "json_schema",
-        "name": "curriculum_plan",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "program_title":      {"type": "string"},
-                "target_summary":     {"type": "string"},
-                "sessions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title":      {"type": "string"},
-                            "goals":      {"type": "array", "items": {"type": "string"}},
-                            "activities": {"type": "array", "items": {"type": "string"}},
-                        },
-                        "required": ["title", "goals", "activities"],
-                        "additionalProperties": False,
-                    },
-                },
-                "expected_outcomes": {"type": "array", "items": {"type": "string"}},
-                "notes":             {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["program_title", "target_summary", "sessions", "expected_outcomes", "notes"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def build_user_prompt(answers):
-    return dedent(
-        f"""
-        다음 기업 요구사항을 바탕으로 교육 커리큘럼 초안을 설계해줘.
-
-        회사/팀: {answers.get('company_name', '')}
-        교육 목표: {answers.get('goal', '')}
-        교육 대상자: {answers.get('audience', '')}
-        현재 AI 활용 수준: {answers.get('level', '')}
-        교육 기간 또는 총 시간: {answers.get('duration', '')}
-        원하는 핵심 주제: {answers.get('topic', '')}
-        꼭 반영해야 할 조건 또는 제한사항: {answers.get('constraints', '')}
-
-        요구사항:
-        - 초보자도 이해할 수 있도록 회차별 목표를 분명하게 작성
-        - 실무 적용 가능성이 드러나도록 활동을 구성
-        - 기업 교육이라는 점을 반영해서 너무 학문적으로 쓰지 말 것
-        """
-    ).strip()
-
-
-def extract_text_from_response(response):
-    output_text = getattr(response, "output_text", None)
-    if output_text:
-        return output_text
-    parts = []
-    for item in getattr(response, "output", []):
-        for content in getattr(item, "content", []):
-            if getattr(content, "type", "") == "output_text":
-                parts.append(getattr(content, "text", ""))
-    return "".join(parts).strip()
-
-
-def generate_curriculum(answers):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError(f"OPENAI_API_KEY를 찾을 수 없습니다. {ENV_PATH} 파일을 확인해주세요.")
-
-    client = OpenAI(api_key=api_key)
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        text={"format": build_curriculum_schema()},
-        input=[
-            {"role": "developer", "content": build_system_prompt()},
-            {"role": "user",      "content": build_user_prompt(answers)},
-        ],
-    )
-    raw = extract_text_from_response(response)
-    if not raw:
-        raise ValueError("모델 응답에서 텍스트를 읽지 못했습니다.")
-    return json.loads(raw)
+def generate_curriculum(messages):
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+    
+    # 프론트엔드의 "bot" 역할을 백엔드가 기대하는 "assistant"로 변경
+    formatted_messages = []
+    for m in messages:
+        role = "assistant" if m["role"] == "bot" else m["role"]
+        formatted_messages.append({"role": role, "content": m["content"]})
+        
+    try:
+        response = requests.post(
+            f"{backend_url}/api/generate",
+            json={"messages": formatted_messages},
+            timeout=180
+        )
+        response.raise_for_status()
+        
+        # FastAPI 서버는 {"curriculum": {...}} 형태의 JSON을 반환함
+        data = response.json()
+        if "curriculum" in data:
+            return data["curriculum"]
+        else:
+            raise ValueError("백엔드 응답에 커리큘럼 데이터가 없습니다.")
+            
+    except Exception as e:
+        raise ValueError(f"백엔드 연결/생성 오류: {e}")
 
 # ──────────────────────────────────────────────
 # 채팅 메시지 렌더러
@@ -473,7 +399,7 @@ if st.session_state.curriculum:
 elif st.session_state.generating:
     with st.spinner("커리큘럼을 생성하고 있습니다..."):
         try:
-            curriculum = generate_curriculum(st.session_state.answers)
+            curriculum = generate_curriculum(st.session_state.messages)
             st.session_state.curriculum = curriculum
             st.session_state.generating = False
             st.session_state.messages = st.session_state.messages + [{

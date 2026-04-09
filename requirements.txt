@@ -1,5 +1,4 @@
 openai
-pygame
 streamlit
 requests
 

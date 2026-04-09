@@ -32,15 +32,3 @@ services:
       start_period: 40s
       retries: 3
 
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: ax-ngrok
-    env_file:
-      - ../.env
-    command: http backend:8000 --log=stdout
-    ports:
-      - "4040:4040"   # ngrok 대시보드
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
