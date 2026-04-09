@@ -278,18 +278,14 @@ def render_curriculum(curriculum):
         unsafe_allow_html=True,
     )
 
-    st.markdown("### 회차별 커리큘럼")
-    for i, session in enumerate(curriculum["sessions"], start=1):
-        goals_html = "".join(
-            f'<span class="tag">{g}</span>' for g in session["goals"]
-        )
-        activities_html = "".join(
-            f'<span class="tag-outline">{a}</span>' for a in session["activities"]
-        )
+    st.markdown("### 📘 공통 이론 세션")
+    for i, session in enumerate(curriculum.get("theory_sessions", []), start=1):
+        goals_html = "".join(f'<span class="tag">{g}</span>' for g in session.get("goals", []))
+        activities_html = "".join(f'<span class="tag-outline">{a}</span>' for a in session.get("activities", []))
         st.markdown(
             f"""
             <div class="session-card">
-                <h4>{i}회차 &nbsp;·&nbsp; {session['title']}</h4>
+                <h4>{i}회차 &nbsp;·&nbsp; {session.get('title', '')} <span style="font-size:0.85rem;color:#888;">({session.get('duration_hours', 0)}시간)</span></h4>
                 <p style="font-size:0.82rem;color:#666;margin:0 0 0.4rem;">목표</p>
                 <div class="tag-list">{goals_html}</div>
                 <p style="font-size:0.82rem;color:#666;margin:0.7rem 0 0.4rem;">활동</p>
@@ -298,6 +294,27 @@ def render_curriculum(curriculum):
             """,
             unsafe_allow_html=True,
         )
+
+    st.markdown("### 🚀 맞춤형 실습 세션 (그룹별)")
+    for group in curriculum.get("group_sessions", []):
+        st.markdown(f"#### 👥 {group.get('group_name', '')} <span style=\"font-size:1rem;color:#555;\">({group.get('target_types', '')} / {group.get('participant_count', 0)}명)</span>", unsafe_allow_html=True)
+        st.markdown(f"<p style=\"font-size:0.95rem;color:#444;margin-bottom:1rem;\">{group.get('focus_description', '')}</p>", unsafe_allow_html=True)
+        
+        for i, session in enumerate(group.get("sessions", []), start=1):
+            goals_html = "".join(f'<span class="tag">{g}</span>' for g in session.get("goals", []))
+            activities_html = "".join(f'<span class="tag-outline">{a}</span>' for a in session.get("activities", []))
+            st.markdown(
+                f"""
+                <div class="session-card" style="margin-left: 1rem; border-left-color: #555;">
+                    <h4>{i}회차 &nbsp;·&nbsp; {session.get('title', '')} <span style="font-size:0.85rem;color:#888;">({session.get('duration_hours', 0)}시간)</span></h4>
+                    <p style="font-size:0.82rem;color:#666;margin:0 0 0.4rem;">목표</p>
+                    <div class="tag-list">{goals_html}</div>
+                    <p style="font-size:0.82rem;color:#666;margin:0.7rem 0 0.4rem;">활동</p>
+                    <div class="tag-list">{activities_html}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     col1, col2 = st.columns(2)
 
