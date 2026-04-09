@@ -162,10 +162,25 @@ def _calculate_groups(info: CollectedInfo) -> dict:
 
 @app.get("/health")
 async def health():
+    vs = _state.get("vectorstore")
+    chunk_count = vs._collection.count() if vs else 0
     return {
         "status": "ok",
-        "vectorstore_ready": "vectorstore" in _state,
+        "vectorstore_ready": vs is not None,
+        "chunk_count": chunk_count,
     }
+
+
+@app.post("/admin/reindex")
+async def reindex(force: bool = False):
+    """벡터 DB 증분 재인덱싱 (force=true이면 전체 재구축)."""
+    if "api_key" not in _state:
+        raise HTTPException(status_code=503, detail="서버가 아직 초기화되지 않았습니다.")
+    try:
+        _state["vectorstore"] = setup_vector_store(_state["api_key"], force_reindex=force)
+        return {"status": "ok", "chunk_count": _state["vectorstore"]._collection.count()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/chat", response_model=ChatResponse)

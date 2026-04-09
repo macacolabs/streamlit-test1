@@ -52,11 +52,20 @@ GENERATION_SYSTEM_PROMPT = dedent("""
 # ──────────────────────────────────────────────
 
 def retrieve_group_context(vectorstore: Chroma, type_names: list[str]) -> str:
-    query = f"{', '.join(type_names)} 유형의 AI 활용 특성, 강점, 보완 방향, 교육적 접근 방법"
+    """
+    유형별 AX Compass 문서를 검색한다.
+    - type_names에 포함된 유형 섹션 청크만 필터링 (section 메타데이터 활용)
+    - 유형당 최소 2개 청크를 확보하기 위해 k = len(type_names) * 2
+    """
+    query = (
+        f"{', '.join(type_names)} 유형의 "
+        "AI 활용 특성, 강점, 보완 방향, 교육적 접근 방법"
+    )
+    k = max(len(type_names) * 2, 4)
     retriever = vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={
-            "k": len(type_names),
+            "k": k,
             "filter": {"$and": [
                 {"doc_type":  {"$eq": "ax_compass"}},
                 {"type_name": {"$in": type_names}},
@@ -64,10 +73,27 @@ def retrieve_group_context(vectorstore: Chroma, type_names: list[str]) -> str:
         },
     )
     docs = retriever.invoke(query)
-    return "\n\n".join(d.page_content for d in docs)
+
+    # 유형별로 그룹화하여 출력 (section 메타데이터 활용)
+    grouped: dict[str, list[str]] = {t: [] for t in type_names}
+    for d in docs:
+        tname = d.metadata.get("type_name", "")
+        if tname in grouped:
+            grouped[tname].append(d.page_content)
+
+    parts = []
+    for tname, contents in grouped.items():
+        if contents:
+            parts.append(f"[{tname}]\n" + "\n\n".join(contents))
+
+    return "\n\n".join(parts) if parts else "\n\n".join(d.page_content for d in docs)
 
 
 def retrieve_curriculum_examples(vectorstore: Chroma, query: str, k: int = 3) -> str:
+    """
+    커리큘럼 예시를 검색한다.
+    - section 메타데이터를 출처 표시에 활용하여 LLM이 구조를 파악하기 쉽게 함
+    """
     retriever = vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={
@@ -76,7 +102,15 @@ def retrieve_curriculum_examples(vectorstore: Chroma, query: str, k: int = 3) ->
         },
     )
     docs = retriever.invoke(query)
-    return "\n\n---\n\n".join(d.page_content for d in docs)
+
+    parts = []
+    for d in docs:
+        course  = d.metadata.get("course_name", "")
+        section = d.metadata.get("section", "")
+        header  = f"[출처: {course}" + (f" / {section}" if section else "") + "]"
+        parts.append(f"{header}\n{d.page_content}")
+
+    return "\n\n---\n\n".join(parts)
 
 
 # ──────────────────────────────────────────────
