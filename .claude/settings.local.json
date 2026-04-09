@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -m pip install pytest --quiet)",
+      "Bash(py -m pip install pytest -q)",
+      "Bash(taskkill /F /IM streamlit.exe)",
+      "Bash(taskkill /F /IM python.exe /FI \"WINDOWTITLE eq streamlit*\")",
+      "Bash(netstat -ano)"
+    ]
+  }
+}

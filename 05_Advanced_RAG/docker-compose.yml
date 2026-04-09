@@ -1,0 +1,46 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# AX Compass 백엔드 — Docker Compose
+#
+# 실행:
+#   OPENAI_API_KEY=sk-... NGROK_AUTHTOKEN=... docker compose up
+#
+# 또는 .env 파일 사용:
+#   echo "OPENAI_API_KEY=sk-..." >> .env
+#   echo "NGROK_AUTHTOKEN=..." >> .env
+#   docker compose up
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  backend:
+    build:
+      context: ..
+      dockerfile: 05_Advanced_RAG/05_7.Dockerfile
+    container_name: ax-backend
+    env_file:
+      - ../.env
+    volumes:
+      - ../Data:/app/Data:ro
+      - ../vectorDB:/app/vectorDB
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ax-ngrok
+    env_file:
+      - ../.env
+    command: http backend:8000 --log=stdout
+    ports:
+      - "4040:4040"   # ngrok 대시보드
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
