@@ -204,13 +204,17 @@ QUESTIONS = [
     ("constraints",  "꼭 반영해야 할 조건이나 제한사항이 있나요?"),
 ]
 
+AX_COMPASS_TYPES = ["균형형", "이해형", "과신형", "실행형", "판단형", "조심형"]
+
 def _reset_state():
-    st.session_state.messages   = []
-    st.session_state.step       = 0
-    st.session_state.answers    = {}
-    st.session_state.curriculum = None
-    st.session_state.generating = False
-    st.session_state.greeted    = False
+    st.session_state.messages      = []
+    st.session_state.step          = 0
+    st.session_state.answers       = {}
+    st.session_state.curriculum    = None
+    st.session_state.generating    = False
+    st.session_state.greeted       = False
+    st.session_state.ax_compass_phase = False
+    st.session_state.ax_counts     = {t: 0 for t in AX_COMPASS_TYPES}
 
 if "greeted" not in st.session_state:
     _reset_state()
@@ -359,6 +363,11 @@ with st.sidebar:
         short = q[:18] + "…" if len(q) > 18 else q
         st.markdown(f"{icon} **{label_step}.** {short}")
 
+    # AX Compass 단계
+    ax_done = st.session_state.generating or st.session_state.curriculum is not None
+    ax_icon = "✅" if ax_done else ("▶️" if st.session_state.ax_compass_phase else "○")
+    st.markdown(f"{ax_icon} **{total + 1}.** AX Compass 진단 결과")
+
     st.markdown("---")
 
     if st.button("대화 초기화", use_container_width=True):
@@ -379,6 +388,11 @@ with st.sidebar:
         }
         for k, v in st.session_state.answers.items():
             st.markdown(f"**{label_map.get(k, k)}**: {v}")
+
+    if any(v > 0 for v in st.session_state.get("ax_counts", {}).values()):
+        st.markdown("**AX Compass 인원**")
+        for t, n in st.session_state.ax_counts.items():
+            st.markdown(f"- {t}: {n}명")
 
 # ──────────────────────────────────────────────
 # 메인 레이아웃
@@ -431,6 +445,45 @@ elif st.session_state.generating:
             }]
     st.rerun()
 
+# ── AX Compass 진단 결과 입력 ─────────────────────
+elif st.session_state.ax_compass_phase:
+    st.markdown("### 🧭 AX Compass 진단 결과 입력")
+    st.markdown("진단 검사 결과 유형별 인원수를 입력해주세요.")
+
+    cols = st.columns(3)
+    type_inputs = {}
+    for i, t in enumerate(AX_COMPASS_TYPES):
+        with cols[i % 3]:
+            type_inputs[t] = st.number_input(
+                f"{t}",
+                min_value=0,
+                value=st.session_state.ax_counts.get(t, 0),
+                step=1,
+                key=f"ax_{t}",
+            )
+
+    if st.button("진단 결과 확인 및 커리큘럼 생성", use_container_width=True):
+        st.session_state.ax_counts = type_inputs
+        total_participants = sum(type_inputs.values())
+
+        ax_summary = ", ".join(f"{t} {n}명" for t, n in type_inputs.items())
+        ax_message = (
+            f"[AX Compass 진단 결과 입력]\n"
+            f"진단 검사 결과 유형별 인원수를 입력해주세요.\n\n"
+            + "\n".join(
+                f"{i+1}. {t} 인원수: {n}"
+                for i, (t, n) in enumerate(type_inputs.items())
+            )
+        )
+
+        st.session_state.messages = st.session_state.messages + [
+            {"role": "user", "content": ax_message},
+            {"role": "bot",  "content": f"감사합니다! 총 {total_participants}명({ax_summary})의 진단 결과를 확인했습니다. 커리큘럼을 생성하겠습니다."},
+        ]
+        st.session_state.ax_compass_phase = False
+        st.session_state.generating       = True
+        st.rerun()
+
 # ── 질문 진행 중 → st.chat_input ─────────────────
 elif st.session_state.step > 0 and st.session_state.step <= len(QUESTIONS):
     user_input = st.chat_input("답변을 입력하세요...")
@@ -453,23 +506,11 @@ elif st.session_state.step > 0 and st.session_state.step <= len(QUESTIONS):
             ]
             st.session_state.step = next_step
         else:
-            summary_lines = [
-                f"**{label}**: {st.session_state.answers.get(k, '')}"
-                for k, label in [
-                    ("company_name", "회사/팀"),
-                    ("goal",         "교육 목표"),
-                    ("audience",     "교육 대상자"),
-                    ("level",        "현재 수준"),
-                    ("duration",     "교육 기간"),
-                    ("topic",        "핵심 주제"),
-                    ("constraints",  "제한사항"),
-                ]
-            ]
             st.session_state.messages = st.session_state.messages + [{
                 "role": "bot",
-                "content": "감사합니다! 입력하신 내용을 바탕으로 커리큘럼을 생성하겠습니다.\n\n" + "\n".join(summary_lines),
+                "content": "감사합니다! 이제 AX Compass 진단 결과를 입력해주세요.",
             }]
-            st.session_state.step       = next_step
-            st.session_state.generating = True
+            st.session_state.step             = next_step
+            st.session_state.ax_compass_phase = True
 
         st.rerun()   # 성공/실패 모두 rerun → 새 메시지 화면에 반영
